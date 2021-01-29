@@ -1,0 +1,87 @@
+#!/bin/bash
+
+DEBUG=OFF
+
+# Color for output
+
+red=`tput setaf 1`
+green=`tput setaf 2`
+blue=`tput setaf 4`
+reset=`tput sgr0`
+
+SED="$(dirname $0)/sed"
+AWK="$(dirname $0)/awk"
+DAT="$(dirname $0)/../data"
+TMP=$(mktemp -d)
+
+WPP="../data/WPP2019_INT_F03_1_POPULATION_BY_AGE_ANNUAL_BOTH_SEXES.xlsx"
+
+#ssconvert  -S --export-type=Gnumeric_stf:stf_csv "$WPP" "../data/WPP2019_%n.csv"
+
+function fdownload {
+
+    # Download CSV File if it does not exists
+    [ ! -e "$2" ] && curl --output "$2" --url "$1"
+
+
+}
+
+function mksql {
+
+# 12411-0013
+cat <<EOF
+CREATE DATABASE IF NOT EXISTS WPP;
+
+USE WPP;
+
+DROP TABLE IF EXISTS WPP20191;
+
+CREATE TABLE WPP20191 (
+    CountryCode INT DEFAULT 1
+  , Jahr  INT DEFAULT 2019
+  , Altersgruppe INT DEFAULT 0
+  , Anzahl BIGINT
+  , PRIMARY KEY (CountryCode, Jahr, Altersgruppe)
+  );
+
+LOAD DATA LOCAL INFILE '${TMP}/1.csv' 
+    INTO TABLE WPP20191 
+    FIELDS TERMINATED BY ','
+    ENCLOSED BY '"'
+    IGNORE 0 ROWS;
+
+DROP TABLE IF EXISTS WPP20191C;
+
+CREATE TABLE WPP20191C (
+    CountryCode INT DEFAULT 0
+  , ParentCode INT DEFAULT 0 
+  , Region CHAR(64) DEFAULT 'WORLD'
+  , PRIMARY KEY (CountryCode)
+  , INDEX(ParentCode)
+  , INDEX( Region)
+  );
+
+LOAD DATA LOCAL INFILE '${TMP}/2.csv' 
+    INTO TABLE WPP20191C 
+    FIELDS TERMINATED BY ','
+    ENCLOSED BY '"'
+    IGNORE 0 ROWS;
+EOF
+
+cat "$DAT/WPP2019_0.csv" \
+| grep -v 'Label/Separator' \
+| sed --file "$SED/WPP2019-1.sed" \
+| awk -F ',' --file "$AWK/WPP2019-1.awk" \
+> "${TMP}/1.csv"
+
+cat "$DAT/WPP2019_0.csv" \
+| grep -v 'Label/Separator' \
+| sed --file "$SED/WPP2019-2.sed" \
+| sort -ug \
+> "${TMP}/2.csv"
+
+}
+
+#fdownload  "$URL" "$DAT/12411-0013.csv"
+
+mksql 
